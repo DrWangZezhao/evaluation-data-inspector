@@ -4,6 +4,12 @@
 
 This portfolio project demonstrates a deliberately small production path: testable statistical logic, a usable Streamlit interface, a reproducible Docker image, and an AWS Lightsail Container Service deployment target. It does not claim to replace a full statistical package or a formal impact evaluation.
 
+## Live demo
+
+**[Launch the Evaluation Data Inspector](https://evaluation-data-inspector.streamlit.app/)**
+
+The public portfolio deployment runs on Streamlit Community Cloud from `main/app.py`. The same repository also includes a Docker/AWS Lightsail deployment path.
+
 ## Features
 
 - Upload and validate a UTF-8 CSV, or explore the included synthetic educational evaluation data.
@@ -23,8 +29,9 @@ flowchart LR
     U["User browser"] --> S["Streamlit web application<br/>app.py"]
     S --> A["Python analysis layer<br/>analysis.py"]
     A --> P["pandas + NumPy<br/>validation and statistics"]
+    C["Streamlit Community Cloud<br/>current public host"] -. runs .-> S
     D["Docker container"] -. packages .-> S
-    L["AWS Lightsail<br/>Container Service"] -. runs .-> D
+    L["AWS Lightsail<br/>optional container target"] -. runs .-> D
 ```
 
 `app.py` owns presentation and application flow. `analysis.py` contains reusable, independently tested validation and statistical functions. There is no database, API tier, authentication service, or uploaded-data storage.
@@ -33,6 +40,7 @@ flowchart LR
 
 - Python 3.12
 - Streamlit
+- Streamlit Community Cloud (live deployment)
 - pandas and NumPy
 - pytest
 - Docker
@@ -101,7 +109,9 @@ At the time of this repository's final local QA, the available environment did n
 
 ## Cloud deployment
 
-The intended public deployment is the smallest AWS Lightsail Container Service tier (`nano`, scale 1). See [DEPLOYMENT.md](DEPLOYMENT.md) for prerequisites, exact commands, health verification, updates, and cleanup. AWS charges can apply while the service exists. Deployment has not been claimed: the final QA environment did not include the AWS CLI, so it could not establish an AWS identity or region.
+The live demo is deployed from `main/app.py` on Streamlit Community Cloud at [evaluation-data-inspector.streamlit.app](https://evaluation-data-inspector.streamlit.app/). The hosted app tracks the GitHub repository's `main` branch.
+
+The repository also retains an optional AWS Lightsail Container Service deployment path (`nano`, scale 1). See [DEPLOYMENT.md](DEPLOYMENT.md) for prerequisites, exact commands, health verification, updates, and cleanup. AWS charges can apply while the service exists. AWS deployment itself was not run during final local QA because the environment did not include the AWS CLI.
 
 ## Privacy and security
 
