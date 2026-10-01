@@ -13,6 +13,8 @@ RUN pip install --no-cache-dir --requirement requirements.txt \
     && useradd --create-home --uid 10001 appuser
 
 COPY --chown=appuser:appuser app.py analysis.py ./
+COPY --chown=appuser:appuser inspector ./inspector
+COPY --chown=appuser:appuser assets ./assets
 COPY --chown=appuser:appuser .streamlit ./.streamlit
 COPY --chown=appuser:appuser sample_data ./sample_data
 

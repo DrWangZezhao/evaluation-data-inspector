@@ -197,3 +197,143 @@ def cohens_d(data: pd.DataFrame, outcome: str, group: str) -> dict[str, object]:
         "mean_difference": mean_difference,
         "cohens_d": float(mean_difference / np.sqrt(pooled_variance)),
     }
+
+
+def finite_numeric_series(data: pd.DataFrame, column: str) -> tuple[pd.Series, int, int]:
+    """Return finite numeric values plus original-missing and non-finite counts."""
+
+    validate_dataframe(data)
+    if column not in data.columns or not is_numeric_dtype(data[column]) or is_bool_dtype(data[column]):
+        raise AnalysisError(f"'{column}' must be a numeric, non-boolean variable.")
+    numeric = pd.to_numeric(data[column], errors="coerce").astype(float)
+    original_missing = int(data[column].isna().sum())
+    nonfinite = int(np.isinf(numeric).sum())
+    finite = numeric[np.isfinite(numeric)]
+    return finite, original_missing, nonfinite
+
+
+def numeric_summary(data: pd.DataFrame, column: str) -> dict[str, object]:
+    """Return JSON-safe finite descriptive statistics including the median."""
+
+    values, missing_count, nonfinite_count = finite_numeric_series(data, column)
+    n = int(len(values))
+    return {
+        "variable": column,
+        "n": n,
+        "missing_count": missing_count,
+        "nonfinite_count": nonfinite_count,
+        "mean": float(values.mean()) if n else None,
+        "sd": float(values.std(ddof=1)) if n > 1 else None,
+        "median": float(values.median()) if n else None,
+        "min": float(values.min()) if n else None,
+        "max": float(values.max()) if n else None,
+    }
+
+
+def categorical_summary(data: pd.DataFrame, column: str, *, max_categories: int = 20) -> dict[str, object]:
+    """Return frequencies using all valid observations as the percentage denominator."""
+
+    validate_dataframe(data)
+    if column not in data.columns:
+        raise AnalysisError(f"Variable '{column}' was not found.")
+    valid = data[column].dropna()
+    counts = valid.value_counts(dropna=False, sort=False)
+    ordered = sorted(counts.items(), key=lambda item: (-int(item[1]), str(item[0])))
+    shown = ordered[:max_categories]
+    if len(ordered) > max_categories:
+        shown = ordered[: max_categories - 1]
+        shown.append(("Other", sum(int(count) for _, count in ordered[max_categories - 1 :])))
+    denominator = int(len(valid))
+    return {
+        "variable": column,
+        "valid_n": denominator,
+        "missing_count": int(data[column].isna().sum()),
+        "categories": [
+            {"label": str(label), "count": int(count), "percent": float(count / denominator * 100)}
+            for label, count in shown
+        ] if denominator else [],
+        "aggregated": len(ordered) > max_categories,
+    }
+
+
+def group_statistics_detailed(data: pd.DataFrame, outcome: str, group: str) -> dict[str, object]:
+    """Return finite complete-case group summaries without silently dropping groups."""
+
+    _validate_analysis_columns(data, outcome, group)
+    outcome_values = pd.to_numeric(data[outcome], errors="coerce").astype(float)
+    valid_mask = data[group].notna() & np.isfinite(outcome_values)
+    valid = pd.DataFrame({"outcome": outcome_values[valid_mask], "group": data.loc[valid_mask, group]})
+    groups = list(pd.unique(data.loc[data[group].notna(), group]))
+    rows: list[dict[str, object]] = []
+    for label in groups:
+        values = valid.loc[valid["group"] == label, "outcome"]
+        n = int(len(values))
+        rows.append({
+            "group": str(label), "n": n,
+            "mean": float(values.mean()) if n else None,
+            "sd": float(values.std(ddof=1)) if n > 1 else None,
+            "median": float(values.median()) if n else None,
+            "min": float(values.min()) if n else None,
+            "max": float(values.max()) if n else None,
+        })
+    return {
+        "outcome": outcome, "group": group, "rows": rows, "valid_n": int(valid_mask.sum()),
+        "excluded_count": int((~valid_mask).sum()), "group_order": [str(value) for value in groups],
+    }
+
+
+def pearson_relationship(data: pd.DataFrame, first: str, second: str) -> dict[str, object]:
+    """Calculate descriptive Pearson r on pairwise-complete finite observations."""
+
+    if first == second:
+        raise AnalysisError("Relationship variables must be different.")
+    x, _, _ = finite_numeric_series(data, first)
+    y, _, _ = finite_numeric_series(data, second)
+    raw_x = pd.to_numeric(data[first], errors="coerce").astype(float)
+    raw_y = pd.to_numeric(data[second], errors="coerce").astype(float)
+    mask = np.isfinite(raw_x) & np.isfinite(raw_y)
+    paired = pd.DataFrame({"x": raw_x[mask], "y": raw_y[mask]})
+    n = int(len(paired))
+    reason = None
+    r = None
+    if n < 3:
+        reason = "fewer_than_three_pairs"
+    elif paired["x"].nunique() < 2 or paired["y"].nunique() < 2:
+        reason = "zero_variance"
+    else:
+        r = float(paired["x"].corr(paired["y"], method="pearson"))
+    return {"first": first, "second": second, "n": n, "excluded_count": int(len(data) - n), "r": r, "reason": reason}
+
+
+def paired_change_statistics(data: pd.DataFrame, pre: str, post: str) -> dict[str, object]:
+    """Summarise pre, post, and post-minus-pre on the identical finite pair subset."""
+
+    if pre == post:
+        raise AnalysisError("Pre and post variables must be different.")
+    finite_numeric_series(data, pre)
+    finite_numeric_series(data, post)
+    pre_values = pd.to_numeric(data[pre], errors="coerce").astype(float)
+    post_values = pd.to_numeric(data[post], errors="coerce").astype(float)
+    mask = np.isfinite(pre_values) & np.isfinite(post_values)
+    before, after = pre_values[mask], post_values[mask]
+    change = after - before
+    n = int(mask.sum())
+    def describe(series: pd.Series) -> dict[str, float | int | None]:
+        return {"n": n, "mean": float(series.mean()) if n else None, "sd": float(series.std(ddof=1)) if n > 1 else None, "median": float(series.median()) if n else None}
+    return {"pre": pre, "post": post, "paired_n": n, "excluded_count": int(len(data) - n), "pre_summary": describe(before), "post_summary": describe(after), "change_summary": describe(change), "direction": "post_minus_pre"}
+
+
+def date_mean_series(data: pd.DataFrame, date_column: str, outcome: str) -> dict[str, object]:
+    """Aggregate finite outcomes by confirmed date using means and observation counts."""
+
+    finite_numeric_series(data, outcome)
+    dates = pd.to_datetime(data[date_column], errors="coerce")
+    values = pd.to_numeric(data[outcome], errors="coerce").astype(float)
+    mask = dates.notna() & np.isfinite(values)
+    valid = pd.DataFrame({"date": dates[mask], "value": values[mask]})
+    grouped = valid.groupby("date", sort=True)["value"].agg(["mean", "count"]).reset_index()
+    return {
+        "date": date_column, "outcome": outcome, "valid_n": int(mask.sum()),
+        "excluded_count": int(len(data) - mask.sum()),
+        "points": [{"date": row.date.isoformat(), "mean": float(row.mean), "count": int(row.count)} for row in grouped.itertuples(index=False)],
+    }

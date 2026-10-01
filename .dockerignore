@@ -9,3 +9,9 @@ __pycache__
 venv
 tests
 work
+.env
+.env.*
+.streamlit/secrets.toml
+*.docx
+*.html
+reports
